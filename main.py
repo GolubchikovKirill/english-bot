@@ -28,14 +28,8 @@ def start(message):
         session.add(user)
         session.commit()
 
-        # Добавляем системные слова новому пользователю
-        system_user = session.query(User).filter_by(telegram_id=0).first()
-        if system_user:
-            system_words = session.query(Word).filter_by(created_by=system_user.id).all()
-            for word in system_words:
-                user_word = UserWord(user_id=user.id, word_id=word.id)
-                session.add(user_word)
-            session.commit()
+        # Создание таблиц, если они ещё не созданы
+        init_db()
 
     bot.send_message(
         message.chat.id,
@@ -175,5 +169,4 @@ def check_answer(message):
 
 if __name__ == "__main__":
     print('bot is running')
-    init_db()
     bot.infinity_polling()

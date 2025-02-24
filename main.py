@@ -1,4 +1,5 @@
 import telebot
+from sqlalchemy import func
 from telebot import types
 import random
 from models import User, Word, UserWord

@@ -15,7 +15,6 @@ class Word(Base):
     id = Column(Integer, primary_key=True)
     english = Column(String)
     russian = Column(String)
-    created_by = Column(Integer, ForeignKey("users.id"))
 
 class UserWord(Base):
     __tablename__ = 'user_words'

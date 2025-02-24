@@ -1,5 +1,4 @@
 import telebot
-from sqlalchemy import func
 from telebot import types
 import random
 from models import User, Word, UserWord
@@ -13,7 +12,7 @@ user_states = {}
 # Главное меню
 def main_markup():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.add("🎓 Изучать английский", "📝 Добавить слово", "ℹ️ Помощь")
+    markup.add("🎓 Изучать английский", "📝 Добавить слово", "ℹ️ Помощь", "🗑️ Удалить слово")
     return markup
 
 
@@ -29,8 +28,14 @@ def start(message):
         session.add(user)
         session.commit()
 
-        # Создание таблиц, если они ещё не созданы
-        init_db()
+        # Добавляем системные слова новому пользователю
+        system_user = session.query(User).filter_by(telegram_id=0).first()
+        if system_user:
+            system_words = session.query(Word).filter_by().all()  # Нет filter_by('created_by'), так как это было удалено
+            for word in system_words:
+                user_word = UserWord(user_id=user.id, word_id=word.id)
+                session.add(user_word)
+            session.commit()
 
     bot.send_message(
         message.chat.id,
@@ -46,6 +51,7 @@ def help(message):
         "📚 Это бот для изучения английских слов.\n\n"
         "🎓 Нажми 'Изучать английский' для начала тренировки\n"
         "📝 Используй 'Добавить слово' для добавления новых слов\n"
+        "🗑️ Удаляй ненужные слова с помощью 'Удалить слово'\n"
         "ℹ️ Здесь ты можешь получить справку о функциях бота"
     )
     bot.send_message(message.chat.id, text)
@@ -85,17 +91,42 @@ def process_russian(message):
     bot.send_message(message.chat.id, "✅ Слово успешно добавлено!", reply_markup=main_markup())
 
 
+# Удаление слова
+@bot.message_handler(func=lambda m: m.text == "🗑️ Удалить слово")
+def delete_word(message):
+    msg = bot.send_message(message.chat.id, "Введите слово, которое хотите удалить:")
+    bot.register_next_step_handler(msg, process_word_to_delete)
+
+
+def process_word_to_delete(message):
+    user_id = message.from_user.id
+    word_to_delete = message.text
+
+    user = session.query(User).filter_by(telegram_id=user_id).first()
+
+    word = session.query(Word).filter_by(english=word_to_delete).first()
+    if word:
+        user_word = session.query(UserWord).filter_by(user_id=user.id, word_id=word.id).first()
+        if user_word:
+            session.delete(user_word)
+            session.commit()
+            bot.send_message(message.chat.id, f"Слово '{word_to_delete}' удалено!", reply_markup=main_markup())
+        else:
+            bot.send_message(message.chat.id, f"Слово '{word_to_delete}' не найдено у вас!", reply_markup=main_markup())
+    else:
+        bot.send_message(message.chat.id, f"Слово '{word_to_delete}' не найдено в базе данных.",
+                         reply_markup=main_markup())
+
+
 # Обучение
 @bot.message_handler(func=lambda m: m.text == "🎓 Изучать английский")
 def study(message):
     user = session.query(User).filter_by(telegram_id=message.from_user.id).first()
     words = (
         session.query(Word)
-        .join(UserWord, isouter=True)
-        .filter((UserWord.user_id == user.id) | (UserWord.user_id == None))
-        .filter(UserWord.learned == False)
-        .order_by(func.random())
-        .limit(4)
+        .join(UserWord)
+        .filter(UserWord.user_id == user.id, UserWord.learned == False)
+        .limit(4)  # Получаем только 4 случайных слова
         .all()
     )
 
@@ -103,10 +134,13 @@ def study(message):
         bot.send_message(message.chat.id, "Ты пока не добавил ни одного слова 😢")
         return
 
-    correct = words[0].russian
+    word = random.choice(words)
+    correct = word.russian
 
     # Генерация неправильных ответов
-    wrong = random.sample([w.russian for w in words[1:]], 3)
+    all_ru = [w.russian for w in session.query(Word).filter(Word.russian != correct).all()]
+    wrong = random.sample(all_ru, 4) if len(all_ru) >= 4 else ["Ошибка загрузки"] * 4
+
     options = [correct] + wrong
     random.shuffle(options)
 
@@ -115,14 +149,14 @@ def study(message):
         markup.add(types.KeyboardButton(opt))
 
     user_states[message.from_user.id] = {
-        "word_id": words[0].id,
+        "word_id": word.id,
         "correct": correct,
         "attempts": 0
     }
 
     bot.send_message(
         message.chat.id,
-        f"Как перевести слово: **{words[0].english}**?",
+        f"Как перевести слово: **{word.english}**?",
         parse_mode="Markdown",
         reply_markup=markup
     )
@@ -170,4 +204,5 @@ def check_answer(message):
 
 if __name__ == "__main__":
     print('bot is running')
+    init_db()
     bot.infinity_polling()

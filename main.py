@@ -12,7 +12,7 @@ user_states = {}
 # Главное меню
 def main_markup():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.add("🎓 Изучать английский", "📝 Добавить слово", "ℹ️ Помощь")
+    markup.add("🎓 Изучать английский", "📝 Добавить слово", "ℹ️ Помощь", "🗑️ Удалить слово")
     return markup
 
 
@@ -51,6 +51,7 @@ def help(message):
         "📚 Это бот для изучения английских слов.\n\n"
         "🎓 Нажми 'Изучать английский' для начала тренировки\n"
         "📝 Используй 'Добавить слово' для добавления новых слов\n"
+        "🗑️ Удаляй ненужные слова с помощью 'Удалить слово'\n"
         "ℹ️ Здесь ты можешь получить справку о функциях бота"
     )
     bot.send_message(message.chat.id, text)
@@ -77,7 +78,7 @@ def process_russian(message):
     user = session.query(User).filter_by(telegram_id=user_id).first()
 
     # Создаем новое слово
-    new_word = Word(english=english, russian=russian, created_by=user.id)
+    new_word = Word(english=english, russian=russian)
     session.add(new_word)
     session.commit()
 
@@ -90,6 +91,33 @@ def process_russian(message):
     bot.send_message(message.chat.id, "✅ Слово успешно добавлено!", reply_markup=main_markup())
 
 
+# Удаление слова
+@bot.message_handler(func=lambda m: m.text == "🗑️ Удалить слово")
+def delete_word(message):
+    msg = bot.send_message(message.chat.id, "Введите слово, которое хотите удалить:")
+    bot.register_next_step_handler(msg, process_word_to_delete)
+
+
+def process_word_to_delete(message):
+    user_id = message.from_user.id
+    word_to_delete = message.text
+
+    user = session.query(User).filter_by(telegram_id=user_id).first()
+
+    word = session.query(Word).filter_by(english=word_to_delete).first()
+    if word:
+        user_word = session.query(UserWord).filter_by(user_id=user.id, word_id=word.id).first()
+        if user_word:
+            session.delete(user_word)
+            session.commit()
+            bot.send_message(message.chat.id, f"Слово '{word_to_delete}' удалено!", reply_markup=main_markup())
+        else:
+            bot.send_message(message.chat.id, f"Слово '{word_to_delete}' не найдено у вас!", reply_markup=main_markup())
+    else:
+        bot.send_message(message.chat.id, f"Слово '{word_to_delete}' не найдено в базе данных.",
+                         reply_markup=main_markup())
+
+
 # Обучение
 @bot.message_handler(func=lambda m: m.text == "🎓 Изучать английский")
 def study(message):
@@ -98,6 +126,7 @@ def study(message):
         session.query(Word)
         .join(UserWord)
         .filter(UserWord.user_id == user.id, UserWord.learned == False)
+        .limit(4)  # Получаем только 4 случайных слова
         .all()
     )
 

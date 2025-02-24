@@ -71,7 +71,7 @@ def process_russian(message):
     user = session.query(User).filter_by(telegram_id=user_id).first()
 
     # Создаем новое слово
-    new_word = Word(english=english, russian=russian, created_by=user.id)
+    new_word = Word(english=english, russian=russian)
     session.add(new_word)
     session.commit()
 
@@ -90,8 +90,11 @@ def study(message):
     user = session.query(User).filter_by(telegram_id=message.from_user.id).first()
     words = (
         session.query(Word)
-        .join(UserWord)
-        .filter(UserWord.user_id == user.id, UserWord.learned == False)
+        .join(UserWord, isouter=True)
+        .filter((UserWord.user_id == user.id) | (UserWord.user_id == None))
+        .filter(UserWord.learned == False)
+        .order_by(func.random())
+        .limit(4)
         .all()
     )
 
@@ -99,13 +102,10 @@ def study(message):
         bot.send_message(message.chat.id, "Ты пока не добавил ни одного слова 😢")
         return
 
-    word = random.choice(words)
-    correct = word.russian
+    correct = words[0].russian
 
     # Генерация неправильных ответов
-    all_ru = [w.russian for w in session.query(Word).filter(Word.russian != correct).all()]
-    wrong = random.sample(all_ru, 4) if len(all_ru) >= 4 else ["Ошибка загрузки"] * 4
-
+    wrong = random.sample([w.russian for w in words[1:]], 3)
     options = [correct] + wrong
     random.shuffle(options)
 
@@ -114,14 +114,14 @@ def study(message):
         markup.add(types.KeyboardButton(opt))
 
     user_states[message.from_user.id] = {
-        "word_id": word.id,
+        "word_id": words[0].id,
         "correct": correct,
         "attempts": 0
     }
 
     bot.send_message(
         message.chat.id,
-        f"Как перевести слово: **{word.english}**?",
+        f"Как перевести слово: **{words[0].english}**?",
         parse_mode="Markdown",
         reply_markup=markup
     )

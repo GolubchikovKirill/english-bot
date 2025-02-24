@@ -8,13 +8,11 @@ from config import TOKEN
 bot = telebot.TeleBot(TOKEN)
 user_states = {}
 
-
 # Главное меню
 def main_markup():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.add("🎓 Изучать английский", "📝 Добавить слово", "ℹ️ Помощь", "🗑️ Удалить слово")
     return markup
-
 
 # Обработчик старта
 @bot.message_handler(commands=["start"])
@@ -31,7 +29,7 @@ def start(message):
         # Добавляем системные слова новому пользователю
         system_user = session.query(User).filter_by(telegram_id=0).first()
         if system_user:
-            system_words = session.query(Word).filter_by(created_by=system_user.id).all()
+            system_words = session.query(Word).all()  # Убираем фильтрацию по created_by
             for word in system_words:
                 user_word = UserWord(user_id=user.id, word_id=word.id)
                 session.add(user_word)
@@ -42,7 +40,6 @@ def start(message):
         "Привет! Давай учить английский!",
         reply_markup=main_markup()
     )
-
 
 # Помощь
 @bot.message_handler(func=lambda m: m.text == "ℹ️ Помощь")
@@ -56,19 +53,16 @@ def help(message):
     )
     bot.send_message(message.chat.id, text)
 
-
 # Добавление слова
 @bot.message_handler(func=lambda m: m.text == "📝 Добавить слово")
 def add_word(message):
     msg = bot.send_message(message.chat.id, "Введи слово на английском:")
     bot.register_next_step_handler(msg, process_english)
 
-
 def process_english(message):
     user_states[message.from_user.id] = {"english": message.text}
     msg = bot.send_message(message.chat.id, "Теперь введи перевод на русском:")
     bot.register_next_step_handler(msg, process_russian)
-
 
 def process_russian(message):
     user_id = message.from_user.id
@@ -90,13 +84,11 @@ def process_russian(message):
     del user_states[user_id]
     bot.send_message(message.chat.id, "✅ Слово успешно добавлено!", reply_markup=main_markup())
 
-
 # Удаление слова
 @bot.message_handler(func=lambda m: m.text == "🗑️ Удалить слово")
 def delete_word(message):
     msg = bot.send_message(message.chat.id, "Введите слово, которое хотите удалить:")
     bot.register_next_step_handler(msg, process_word_to_delete)
-
 
 def process_word_to_delete(message):
     user_id = message.from_user.id
@@ -116,7 +108,6 @@ def process_word_to_delete(message):
     else:
         bot.send_message(message.chat.id, f"Слово '{word_to_delete}' не найдено в базе данных.",
                          reply_markup=main_markup())
-
 
 # Обучение
 @bot.message_handler(func=lambda m: m.text == "🎓 Изучать английский")
@@ -161,7 +152,6 @@ def study(message):
         reply_markup=markup
     )
 
-
 # Проверка ответа
 @bot.message_handler(func=lambda m: m.from_user.id in user_states)
 def check_answer(message):
@@ -200,7 +190,6 @@ def check_answer(message):
             del user_states[user_id]
         else:
             bot.send_message(message.chat.id, "😕 Попробуй еще раз:")
-
 
 if __name__ == "__main__":
     print('bot is running')
